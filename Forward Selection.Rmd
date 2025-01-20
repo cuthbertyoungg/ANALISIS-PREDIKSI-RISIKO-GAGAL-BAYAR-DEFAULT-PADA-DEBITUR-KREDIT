@@ -1,0 +1,447 @@
+---
+title: "projek fiksss"
+author: "Nabella Yunita Sari_164231019"
+date: "2024-12-10"
+output: pdf_document
+---
+
+## Import Library
+```{r} 
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(MASS)
+library(VIM)
+library(mice)
+library(tidyr)
+library(caret)
+library(FactoMineR)
+library(factoextra)
+```
+## Load Data
+```{r}
+data_loan <- read_csv("C:/Users/HP/Downloads/LoanData_Raw_v1.0.csv")
+head(data)
+```
+## Cek Kualitas Data
+## Clean Data
+```{r}
+data_loan$default <- as.character(data_loan$default)
+data_loan$default <- ifelse(data_loan$default %in% c("'0'", ":0", "0"), 0, 1)
+data_loan$default <- as.factor(data_loan$default)
+```
+
+### Banyak Baris dan Kolom
+```{r}
+nrow(data_loan)
+ncol(data_loan)
+```
+### Tipe Data
+```{r}
+str(data_loan)
+```
+### Cek Jumlah Unique untuk Setiap Kolom
+```{r}
+jumlah_unique <- sapply(data_loan, function(x) length(unique(x)))
+jumlah_unique
+```
+### Cek Duplikasi Data
+```{r}
+duplicates <- data_loan %>%
+  filter(duplicated(.))
+print(paste("Jumlah baris duplikat:", nrow(duplicates)))
+```
+### Ringkasan Data
+```{r}
+summary(data_loan)
+```
+## Outliers
+### Cek Jumlah Outlier
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+
+outliers_per_column
+```
+```{r}
+percent_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  outlier_count <- sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+  total_count <- sum(!is.na(column)) # Count of non-missing values
+  (outlier_count / total_count) * 100 # Return percentage
+}
+
+percent_outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    percent_outliers(col)
+  } else {
+    NA # Skip non-numeric columns
+  }
+})
+
+percent_outliers_per_column
+```
+## Box plot masing-masing Variabel
+
+## Handling Outlier
+```{r}
+# Function to handle outliers by replacing them with lower or upper bound
+handle_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  
+  # Replace outliers with the lower or upper bound
+  column[column < lower_bound] <- lower_bound
+  column[column > upper_bound] <- upper_bound
+  
+  return(column)
+}
+
+numeric_columns <- names(data_loan)[sapply(data_loan, is.numeric)]
+
+for (col in numeric_columns) {
+  data_loan[[col]] <- handle_outliers(data_loan[[col]])
+}
+
+# View the data after outlier handling
+head(data_loan)
+```
+### Cek Jumlah Outlier Setelah Handling
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+
+outliers_per_column
+```
+### Cek Jumlah Missing Value untuk Setiap Kolom
+```{r}
+jumlah_misval <- sapply(data_loan, function(x) sum(is.na(x)))
+jumlah_misval
+```
+### Persentase Missing Values Untuk Tiap Kolom
+```{r}
+missing_values <- sapply(data_loan, function(x) sum(is.na(x)) / length(x) * 100)
+missing_values
+```
+### Bar Chart Missing Value
+```{r}
+# Hitung jumlah missing value untuk setiap variabel
+missing_data <- sapply(data, function(x) sum(is.na(x)))
+missing_data <- data.frame(Variable = names(missing_data), MissingValues = missing_data)
+
+# Membuat bar chart
+ggplot(missing_data, aes(x = reorder(Variable, MissingValues), y = MissingValues)) +
+  geom_bar(stat = "identity", fill = "blue") +  # Warna biru
+  labs(title = "Jumlah Missing Value per Variabel", x = "Variabel", y = "Jumlah Missing Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+### Cek Missing Values Berdasarkan Visualisasi dengan Mice
+```{r}
+library(mice)
+md.pattern(data_loan)
+```
+### Cek Missing Values Berdasarkan Visualisasi dengan VIM
+```{r}
+library(VIM)
+aggr_plot <- aggr(data_loan, col=c('lightblue','pink') , numbers=TRUE, 
+ sortVars=TRUE, labels=names(data_loan), cex.axis=.8,
+ gap=1, ylab=c("Histogram of missing data","Pattern"))
+```
+## Imputasi Data Missing
+```{r}
+# Imputasi dengan Metoden PMM
+imputed_data1 <- mice(data_loan, m=5, maxit=50, method='pmm', seed=123)
+```
+## Mengekstrak dataset yang sudah diimputasi
+```{r}
+completed_data1 <- complete(imputed_data1)
+head(completed_data1)
+```
+```{r}
+summary(completed_data1)
+```
+### Visualisasi Imputasi Pertama dengan Metode pmm dengan maxit = 50
+```{r}
+xyplot(imputed_data1,default ~ age+ed+employ+address+income+creddebt+othdebt,pch=18,cex=1)
+densityplot(imputed_data1)
+```
+### Cek Missing Value Setelah Imputasi
+```{r}
+jumlah_misval_imputed <- sapply(completed_data1, function(x) sum(is.na(x)))
+jumlah_misval_imputed
+```
+### Cek Outliers Setelah Imputasi
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(completed_data1, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+outliers_per_column
+```
+```{r}
+cor_matrix <- cor(completed_data1[, c("age", "debtinc", "creddebt", "income", "othdebt", "employ", "address")], use = "complete.obs")
+print(cor_matrix)
+```
+### Cek Kecocokan untuk PCA
+```{r}
+library(psych)
+KMO(cor_matrix) 
+```
+
+## Data Train dan Data Test
+```{r}
+set.seed(42)
+
+train_indices <- sample(1:nrow(completed_data1), size = 0.8 * nrow(completed_data1))
+
+train_data <- completed_data1[train_indices, ]  # Training set
+test_data <- completed_data1[-train_indices, ]  # Testing set
+
+cat("Training data size: ", nrow(train_data), "\n")
+cat("Testing data size: ", nrow(test_data), "\n")
+```
+### Model Dengan Data Asli sebelum transform
+```{r}
+logistic_model <- glm(default ~ ., data = train_data, family = binomial)
+summary(logistic_model)
+```
+### Akurasi
+```{r}
+test_predictions_original <- predict(logistic_model, newdata = test_data, type = "response")
+threshold <- 0.5 
+test_class_original <- ifelse(test_predictions_original > threshold, 1, 0)
+
+confusion_matrix_original <- table(Predicted = test_class_original, Actual = test_data$default)
+print(confusion_matrix_original)
+
+accuracy_original <- mean(test_class_original == test_data$default)
+cat("Akurasi Model (Variabel Asli):", accuracy_original, "\n")
+```
+
+## Transformasi Data
+
+### Transform Min Max Scaling Variabel creddebt
+karena creddebt Signifikan dengan koefisien cukup besar dibandingkan variabel lain.
+```{r}
+# Fungsi Min-Max Scaling
+min_max_scaling <- function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
+# Terapkan Min-Max Scaling pada variabel creddebt
+train_data$creddebt <- min_max_scaling(train_data$creddebt)
+test_data$creddebt <- min_max_scaling(test_data$creddebt)
+
+# Periksa hasil scaling
+summary(train_data$creddebt)
+```
+### Transform Robust Scaling Variabel income
+Robust Scaling untuk menangani rentang nilai besar dengan outlier.
+```{r}
+train_data$income <- (train_data$income - median(train_data$income)) / IQR(train_data$income)
+test_data$income <- (test_data$income - median(train_data$income)) / IQR(train_data$income)
+summary(train_data$income)
+```
+
+### Transform Polynomial Variabel age
+Alasan: Distribusi sudah cukup normal, tetapi hubungan antara age dan target mungkin non-linear, sehingga menambahkan pangkat kedua
+```{r}
+train_data$age <- train_data$age^2
+test_data$age <- test_data$age^2
+summary(train_data$age)
+```
+### Transform Min Max Variabel age
+```{r}
+# Fungsi Min-Max Scaling
+min_max_scaling <- function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
+# Terapkan Min-Max Scaling pada variabel creddebt
+train_data$age <- min_max_scaling(train_data$age)
+test_data$age <- min_max_scaling(test_data$age)
+
+# Periksa hasil scaling
+summary(train_data$age)
+```
+
+### Transform log Variabel othdebt
+```{r}
+# Histogram untuk memeriksa distribusi othdebt
+hist(train_data$othdebt, breaks = 30, col = "skyblue", 
+     main = "Histogram Variabel othdebt", xlab = "othdebt", ylab = "Frekuensi")
+
+# Density plot untuk memeriksa distribusi othdebt
+plot(density(train_data$othdebt, na.rm = TRUE), 
+     main = "Density Plot Variabel othdebt", 
+     xlab = "othdebt", ylab = "Density", 
+     col = "blue", lwd = 2)
+
+# Boxplot untuk mendeteksi outlier
+boxplot(train_data$othdebt, main = "Boxplot Variabel othdebt", 
+        col = "lightblue", horizontal = TRUE)
+```
+```{r}
+train_data$othdebt <- log(train_data$othdebt + 1)
+test_data$othdebt <- log(test_data$othdebt + 1)
+summary(train_data$othdebt)
+```
+### ed tidak ditransform
+Variabel ed kemungkinan tidak termasuk dalam daftar transformasi karena:
+
+Tidak signifikan dalam model.
+Distribusi atau tipe datanya tidak relevan untuk transformasi numerik.
+Korelasi rendah dengan target maupun variabel lainnya.
+
+```{r}
+head(train_data)
+```
+### Model Setelah Transformasi
+```{r}
+logistic_model1 <- glm(default ~ ., data = train_data, family = binomial)
+summary(logistic_model1)
+```
+### Akurasi Setelah Transformasi
+```{r}
+test_predictions_original <- predict(logistic_model1, newdata = test_data, type = "response")
+threshold <- 0.5 
+test_class_original <- ifelse(test_predictions_original > threshold, 1, 0)
+
+confusion_matrix_original <- table(Predicted = test_class_original, Actual = test_data$default)
+print(confusion_matrix_original)
+
+accuracy_original <- mean(test_class_original == test_data$default)
+cat("Akurasi Model (Setelah Trnasformasi):", accuracy_original, "\n")
+```
+# Feature Selection Berdasarkan Korelasi dengan Target
+```{r}
+library(caret)
+
+# Chi-Square Test untuk kategori target
+chi_sq <- sapply(train_data[, -which(names(train_data) == "default")], 
+                 function(x) chisq.test(table(x, train_data$default))$p.value)
+
+# Menampilkan p-value untuk setiap variabel
+chi_sq
+```
+### Metode Backward, Forward, dan Best Subset Selection
+#### Backward Selection
+```{r}
+# Membuat model awal dengan semua variabel
+full_model <- glm(default ~ ., data = train_data, family = binomial)
+
+# Backward selection menggunakan stepAIC
+library(MASS)
+backward_model <- stepAIC(full_model, direction = "backward")
+
+# Melihat model hasil seleksi
+summary(backward_model)
+```
+#### Forward Selection
+```{r}
+# Membuat model awal dengan intercept saja
+null_model <- glm(default ~ 1, data = train_data, family = binomial)
+
+# Full model dengan semua variabel
+full_model <- glm(default ~ ., data = train_data, family = binomial)
+
+# Forward selection menggunakan stepAIC
+forward_model <- stepAIC(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward")
+
+# Melihat model hasil seleksi
+summary(forward_model)
+```
+#### Best Subset Selection
+```{r}
+library(leaps)
+
+# Best subset selection
+best_subset <- regsubsets(default ~ ., data = train_data, nvmax = 10)  # nvmax: jumlah maksimal variabel
+
+# Menampilkan hasil
+summary(best_subset)
+
+# Plotkan hasil untuk memilih model terbaik
+plot(best_subset, scale = "bic")  # Pilihan: "bic", "adjr2", dll.
+```
+### Terbaik
+```{r}
+logistic_model2 <- glm(default ~ age + ed + employ + address + debtinc + creddebt + othdebt,  data = train_data, family = binomial)
+summary(logistic_model2)
+```
+### Akurasi Setelah Forward
+```{r}
+test_predictions_original <- predict(logistic_model2, newdata = test_data, type = "response")
+threshold <- 0.5 
+test_class_original <- ifelse(test_predictions_original > threshold, 1, 0)
+
+confusion_matrix_original <- table(Predicted = test_class_original, Actual = test_data$default)
+print(confusion_matrix_original)
+
+accuracy_original <- mean(test_class_original == test_data$default)
+cat("Akurasi Model (Setelah Forward):", accuracy_original, "\n")
+```
+```{r}
+logistic_model3 <- glm(default ~ age + ed + employ + address + debtinc + creddebt, data = train_data, family = binomial)
+summary(logistic_model3)
+```
+### Akurasi Setelah Forward
+```{r}
+test_predictions <- predict(logistic_model3, newdata = test_data, type = "response")
+threshold <- 0.5 
+test_class <- ifelse(test_predictions > threshold, 1, 0)
+
+confusion_matrix_original <- table(Predicted = test_class, Actual = test_data$default)
+print(confusion_matrix_original)
+
+accuracy_original <- mean(test_class_original == test_data$default)
+cat("Akurasi Model (Setelah Forward):", accuracy_original, "\n")
+```

@@ -1,0 +1,398 @@
+---
+title: "UAS EVD"
+author: "Nabella Yunita Sari_164231019"
+date: "2024-12-06"
+output: pdf_document
+---
+
+## Import Library
+```{r}
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(MASS)
+library(VIM)
+library(mice)
+library(tidyr)
+library(caret)
+library(FactoMineR)
+library(factoextra)
+```
+## Load Data
+```{r}
+data_loan <- read_csv("C:/Users/HP/Downloads/LoanData_Raw_v1.0.csv")
+head(data)
+```
+## Cek Kualitas Data
+## Clean Data
+```{r}
+data_loan$default <- as.character(data_loan$default)
+data_loan$default <- ifelse(data_loan$default %in% c("'0'", ":0", "0"), 0, 1)
+data_loan$default <- as.factor(data_loan$default)
+```
+
+### Banyak Baris dan Kolom
+```{r}
+nrow(data_loan)
+ncol(data_loan)
+```
+### Tipe Data
+```{r}
+str(data_loan)
+```
+### Cek Jumlah Unique untuk Setiap Kolom
+```{r}
+jumlah_unique <- sapply(data_loan, function(x) length(unique(x)))
+jumlah_unique
+```
+### Cek Duplikasi Data
+```{r}
+duplicates <- data_loan %>%
+  filter(duplicated(.))
+print(paste("Jumlah baris duplikat:", nrow(duplicates)))
+```
+### Ringkasan Data
+```{r}
+summary(data_loan)
+```
+## Outliers
+### Cek Jumlah Outlier
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+
+outliers_per_column
+```
+```{r}
+percent_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  outlier_count <- sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+  total_count <- sum(!is.na(column)) # Count of non-missing values
+  (outlier_count / total_count) * 100 # Return percentage
+}
+
+percent_outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    percent_outliers(col)
+  } else {
+    NA # Skip non-numeric columns
+  }
+})
+
+percent_outliers_per_column
+```
+## Box plot masing-masing Variabel
+
+## Handling Outlier
+```{r}
+# Function to handle outliers by replacing them with lower or upper bound
+handle_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  
+  # Replace outliers with the lower or upper bound
+  column[column < lower_bound] <- lower_bound
+  column[column > upper_bound] <- upper_bound
+  
+  return(column)
+}
+
+numeric_columns <- names(data_loan)[sapply(data_loan, is.numeric)]
+
+for (col in numeric_columns) {
+  data_loan[[col]] <- handle_outliers(data_loan[[col]])
+}
+
+# View the data after outlier handling
+head(data_loan)
+```
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(data_loan, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+
+outliers_per_column
+```
+## Missing Values
+```{r}
+is.na(data_loan)
+```
+### Cek Jumlah Missing Value untuk Setiap Kolom
+```{r}
+jumlah_misval <- sapply(data_loan, function(x) sum(is.na(x)))
+jumlah_misval
+```
+### Persentase Missing Values Untuk Tiap Kolom
+```{r}
+missing_values <- sapply(data_loan, function(x) sum(is.na(x)) / length(x) * 100)
+missing_values
+```
+```{r}
+# Hitung jumlah missing value untuk setiap variabel
+missing_data <- sapply(data, function(x) sum(is.na(x)))
+missing_data <- data.frame(Variable = names(missing_data), MissingValues = missing_data)
+
+# Membuat bar chart
+ggplot(missing_data, aes(x = reorder(Variable, MissingValues), y = MissingValues)) +
+  geom_bar(stat = "identity", fill = "blue") +  # Warna biru
+  labs(title = "Jumlah Missing Value per Variabel", x = "Variabel", y = "Jumlah Missing Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+### Cek Missing Values Berdasarkan Visualisasi dengan Mice
+```{r}
+library(mice)
+md.pattern(data_loan)
+```
+### Cek Missing Values Berdasarkan Visualisasi dengan VIM
+```{r}
+library(VIM)
+aggr_plot <- aggr(data_loan, col=c('lightblue','pink') , numbers=TRUE, 
+ sortVars=TRUE, labels=names(data_loan), cex.axis=.8,
+ gap=1, ylab=c("Histogram of missing data","Pattern"))
+```
+## Imputasi Data Missing
+```{r}
+# Imputasi dengan Metoden PMM
+imputed_data1 <- mice(data_loan, m=5, maxit=50, method='pmm', seed=123)
+summary(imputed_data1)
+```
+## Mengekstrak dataset yang sudah diimputasi
+```{r}
+completed_data1 <- complete(imputed_data1)
+head(completed_data1)
+```
+```{r} 
+summary(completed_data1)
+```
+### Visualisasi Imputasi Pertama dengan Metode pmm dengan maxit = 50
+```{r}
+xyplot(imputed_data1,default ~ age+ed+employ+address+income+creddebt+othdebt,pch=18,cex=1)
+densityplot(imputed_data1)
+```
+### Cek Missing Value Setelah Imputasi
+```{r}
+jumlah_misval_imputed <- sapply(completed_data1, function(x) sum(is.na(x)))
+jumlah_misval_imputed
+```
+```{r}
+count_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  sum(column < lower_bound | column > upper_bound, na.rm = TRUE)
+}
+
+outliers_per_column <- sapply(completed_data1, function(col) {
+  if (is.numeric(col)) {
+    count_outliers(col)
+  } else {
+    NA
+  }
+})
+outliers_per_column
+```
+### Cek Korelasi Antar Variabel Prediktor
+```{r}
+cor_matrix <- cor(data[, c("age", "debtinc", "creddebt", "income", "othdebt", "ed", "employ", "address")], use = "complete.obs")
+print(cor_matrix)
+```
+### Cek Kecocokan untuk PCA
+```{r}
+library(psych)
+KMO(cor_matrix) 
+```
+Secara keseluruhan: PCA dapat digunakan untuk dataset ini karena nilai Overall KMO = 0.63 berada di atas ambang batas (0.6). Namun, ada beberapa variabel dengan MSA yang rendah yang kurang mendukung penerapan PCA.
+
+## Data Train dan Data Test
+```{r}
+set.seed(42)
+
+train_indices <- sample(1:nrow(completed_data1), size = 0.8 * nrow(completed_data1))
+
+train_data <- completed_data1[train_indices, ]  # Training set
+test_data <- completed_data1[-train_indices, ]  # Testing set
+
+cat("Training data size: ", nrow(train_data), "\n")
+cat("Testing data size: ", nrow(test_data), "\n")
+```
+```{r}
+logistic_model <- glm(default ~ ., data = train_data, family = binomial)
+logistic_model
+```
+```{r}
+# Melihat hasil model
+summary(logistic_model)
+```
+## Transformasi Data
+
+### Transform Min Max Scaling Variabel age, debtinc, creddebt
+```{r}
+library(caret)
+
+columns_to_scale <- c("age", "debtinc", "creddebt")
+
+scaler <- preProcess(train_data[, columns_to_scale], method = "range")
+
+train_data_min_max_scaled <- train_data
+train_data_min_max_scaled[, columns_to_scale] <- predict(scaler, train_data[, columns_to_scale])
+
+test_data_min_max_scaled <- test_data
+test_data_min_max_scaled[, columns_to_scale] <- predict(scaler, test_data[, columns_to_scale])
+
+cat("Min-Max Scaled Data (Train):\n")
+print(head(train_data_min_max_scaled, 20))
+```
+
+```{r}
+## Transgormasi menggunakan robust scaling
+ 
+library(caret)
+
+columns_to_scale <- c("income", "othdebt")
+
+scaler <- preProcess(train_data_min_max_scaled[, columns_to_scale], method = c("center", "scale"), 
+                     robust = TRUE)  # Robust scaling uses median and IQR
+
+train_data_robust_scaled <- train_data_min_max_scaled
+train_data_robust_scaled[, columns_to_scale] <- predict(scaler, train_data_min_max_scaled[, columns_to_scale])
+
+test_data_robust_scaled <- test_data
+test_data_robust_scaled[, columns_to_scale] <- predict(scaler, train_data_min_max_scaled[, columns_to_scale])
+
+cat("Robust Scaled Data (Train):\n")
+print(head(train_data_robust_scaled, 20))
+```
+```{r}
+data_combined <- rbind(train_data_robust_scaled, test_data_robust_scaled)
+head(data_combined)
+```
+
+```{r}
+library(corrplot)
+
+# Pilih variabel yang ingin dianalisis korelasinya
+selected_vars <- completed_data1[, c("age", "debtinc", "creddebt", "income", "othdebt", "employ", "address", "ed")]
+
+# Hitung matriks korelasi
+cor_matrix <- cor(selected_vars, use = "complete.obs")
+
+# Buat heatmap korelasi
+corrplot(cor_matrix, method = "color", 
+         type = "full",            # Tampilkan full matrix
+         tl.col = "black",         # Warna teks variabel
+         tl.srt = 43,              # Rotasi teks variabel
+         addCoef.col = "black",    # Tambahkan nilai korelasi
+         col = colorRampPalette(c("#F44336", "white","blue" ))(200), # Gradien warna
+         cl.pos = "r",             # Posisi legenda
+         cl.cex = 0.6,             # Ukuran teks legenda
+         mar = c(1, 1, 1, 1),      # Margin grafik
+         title = "Heatmap Korelasi Antar Variabel", cex.main = 1.2)
+```
+### Cek Korelasi Antar Variabel Prediktor
+```{r}
+cor_matrix <- cor(completed_data1[, c("age", "debtinc", "creddebt", "income", "othdebt", "ed", "employ", "address")], use = "complete.obs")
+print(cor_matrix)
+```
+### Cek Kecocokan untuk PCA
+```{r}
+library(psych)
+KMO(cor_matrix) 
+```
+### Dimensionality Reduction using PCA
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+
+train_data_robust_scaled$default <- as.factor(train_data_robust_scaled$default)
+test_data_robust_scaled$default <- as.factor(test_data_robust_scaled$default)
+
+numeric_columns <- c("age", "income", "debtinc", "creddebt", "othdebt")  # Sesuaikan dengan dataset Anda
+train_data_robust_scaled[, numeric_columns] <- lapply(train_data_robust_scaled[, numeric_columns], as.numeric)
+test_data_robust_scaled[, numeric_columns] <- lapply(test_data_robust_scaled[, numeric_columns], as.numeric)
+
+pca_train <- PCA(train_data_robust_scaled[, numeric_columns], graph = FALSE)
+
+fviz_pca_ind(
+  pca_train,
+  label = "none",
+  habillage = train_data_robust_scaled$default,  # Grup berdasarkan variabel 'default'
+  addEllipses = TRUE,
+  ellipse.level = 0.95
+)
+
+fviz_pca_var(
+  pca_train,
+  col.var = "contrib"
+)
+
+pca_test_coords <- predict(pca_train, newdata = test_data_robust_scaled[, numeric_columns])
+
+train_pca_result <- cbind(train_data_robust_scaled, pca_train$ind$coord)
+test_pca_result <- cbind(test_data_robust_scaled, pca_test_coords)
+```
+
+```{r}
+logistic_model1 <- glm(default ~ Dim.1 + Dim.2 + Dim.3 + Dim.4 + Dim.5, data = train_pca_result, family = binomial)
+summary(logistic_model1)
+```
+```{r}
+# Menjalankan PCA
+pca_result <- prcomp(train_data[, -which(names(train_data) == "default")], scale. = TRUE)
+
+# Menampilkan loading matrix
+loadings <- pca_result$rotation
+print(loadings)
+```
+```{r}
+# Scree Plot
+explained_variance <- summary(pca_result)$importance[2, ]  # Proporsi variansi tiap PC
+cumulative_variance <- summary(pca_result)$importance[3, ]  # Variansi kumulatif
+plot(cumulative_variance, type = "b", xlab = "Number of PCs", ylab = "Cumulative Variance Explained", 
+     main = "Scree Plot", col = "blue", pch = 19)
+```
+```{r}
+#write.csv(train_pca_result, "train_pca_result1.csv", row.names = FALSE)
+#write.csv(test_pca_result, "test_pca_result1.csv", row.names = FALSE)
+
+#cat("PCA results saved to 'train_pca_result1.csv' and 'test_pca_result1.csv'\n")
+```
+
+
